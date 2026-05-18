@@ -8,14 +8,18 @@
 load ma31500
 
 Ta=30;     % Temp. Ambiente - Entrada a ser medida em tempo-real
+Ta=27;
+W=0;       % Perturbação
 Ts=1;       % Taxa de amostragem em s
-PO = 50;  % Ponto de Operação em ºC
+PO = 60;  % Ponto de Operação em ºC
 
 %%%%%%%%%%%% Frequencia cooler Perturbação senoidal
 w0=0.06544984694979; % rad/s. Período = 96 seg
 w0=0.09817477042468; % rad/s. Período = 64 seg
 
-%  P2DZ: ganho, 2 polos, atraso e zero
+%  P2DZ de referência: ganho, 2 polos, atraso e zero - só para se familiarizar
+% <<<<< Estes valores deverão ser substituídos, por cada grupo >>>>>>>>>
+%  substituídos
 Kp=0.09078613274052; 
 Tp1=352.9649296152092;
 Tp2=48.86312641418012;
@@ -32,13 +36,20 @@ transit=2000; % descarta transitorio de Tamb ao P.O.
 ui=um(transit:length(um));yi=ym(transit:length(ym));
 Ni=length(ui); tid=0:Ni-1;tid=tid';
 uid=ui-mean(ui); yid=yi-mean(yi);
-len_id=ceil(.75*length(uid));
 
+%%%% avaliar diferentes partições data/datav. Utilzar o modelo com melhor fitness!
+len_id=ceil(.75*length(uid));
 data=iddata(yid(1:len_id), uid(1:len_id), Ts);
 datav=iddata(yid(len_id:length(uid)), uid(len_id:length(uid)), Ts);
 
-kk=delayest(data);
-ge=procest(data,'P2DZ','InputDelay',kk)
+delay=delayest(data);
+ge=procest(data,'P2DZ')
+compare(datav,ge)
+
+% o atraso pode tb ser especificado, procest(data,'P2DZ','InputDelay',kk)
+h=get(ge)   
+
+return
 %%%%%%%%%%%%%%%%%%%%%%%
 
 % Process model with transfer function:        
@@ -73,11 +84,40 @@ B = 1 - A;
 % Capacitância térmica do processo.
 Ct = 0.0002;
 
-% Controlador PI
+% Controlador PI Contínuo - 
+% Valores meramente ilustrativos p/ familiarização
 P=3;I=0.05;
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Malha Aberta para identificação PRBS
 open Termico_FP
 sim Termico_FP
 
+% Malha Fechada - Controle PI-AntiWindup
 open Prj1CDig
 sim Prj1CDig
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+% Projeto PI discreto
+gpt =zpk(-1/Tz,[-1/Tp1 ...
+    -1/Tp2], Kp);
+gpt.InputDelay=Td;
+
+Tc=2*Td
+Tc=Td
+gv=c2d(gpt,Tc)
+
+keyboard
+% Sisotool(gd) [zeta=0.8] 
+% =>  P + I*Tc/(z-1) => P(z- (-P+I Tc)/P)
+
+%===== Prj via SisoTool ajuste (zeta,wn) para obter Mp=25% Simulação ====
+%                                                 wn[rad/s]   Mp   tp[s]   ts[s]   u_max
+%Tc=Td: [zeta=0.707,Mp teo=4.326]  0.137   25    28     73.8    1.0       
+ P = 0.909
+ Z = 0.84
+
+I=-(P*Z-P)/Tc    % Ganho do Canal Integral
+
+%open Prj1dCDig
+%sim   Prj1dCDig
