@@ -18,7 +18,7 @@ K = 3.25;
 A = 0.106;
 
 % Pelo fato do sistema NÃO SER de segunda ordem, fazer o projeto para Mp = 45% no
-% LGR vai gerar um sobresinal maior que 45%, por isso tive que baixar para 35%.
+% LGR vai gerar um sobresinal maior que 45%, por isso tive que baixar Mpj para 35%.
 
 G = K*(s+A)/s;
 
@@ -26,3 +26,5 @@ G = K*(s+A)/s;
 %rlocus(G*Hap);
 
 step(feedback(G*Hap, 1));
+
+% Resultado final: Mp = 45%, TP = 30.3s
