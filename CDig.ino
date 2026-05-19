@@ -1,25 +1,67 @@
 //Definição dos pinos
 
-const int pinSensResist = 15; // D15
+const int pinSensResist = 13; // D13
 const int pinSensAmb = 4; // D4
 const int pinPWMResist = 16; // RX2
 const int pinPWMCooler = 17; // TX2
 
-const int windowSize = 9; // Tamanho do filtro de mediana
-
-float bufferSensResist[windowSize];
-int index1 = 0;
-
-float bufferSensAmb[windowSize];
-int index2 = 0;
-
 int freq = 5000;
 int resolucao = 8; // Resolução do PWM = 2^8 bits = 255
-int dutyCycle = 128;
+int dutyCycle = 32;
 
-unsigned long tempoTroca = 0;
-int estadoAquecedor = 0;
-long intervalo = 30000;
+bool first = 1;
+int cont = 0;
+
+class PRBSGenerator {
+private:
+    int b, j, m;
+    int* x;           // Registrador de deslocamento
+    int counter = 0;  // Contador para o holding time (m)
+    int currentBit = 0;
+
+public:
+    PRBSGenerator(int _b, int _m) : b(_b), m(_m) {
+        // Define o tap de feedback (j) exatamente como no MATLAB
+        j = 1;
+        if (b == 5) j = 2;
+        else if (b == 7) j = 3;
+        else if (b == 9) j = 4;
+        else if (b == 10) j = 3;
+        else if (b == 11) j = 2;
+
+        x = new int[b];
+        // Inicialização aleatória do registrador (rand(1,b) > 0.5)
+        randomSeed(analogRead(0));
+        for (int i = 0; i < b; i++) {
+            x[i] = random(0, 2);
+        }
+    }
+
+    int getNextBit() {
+        if (counter == 0) {
+            // Pega o último bit como saída (x(b) no MATLAB)
+            currentBit = x[b - 1];
+
+            // Calcula o feedback: xor(y(n), x(b-j))
+            // No C++ (0-indexed), x(b) é x[b-1] e x(b-j) é x[b-j-1]
+            int feedback = currentBit ^ x[b - j - 1];
+
+            // Desloca o registrador (x = [feedback x(1:b-1)])
+            for (int i = b - 1; i > 0; i--) {
+                x[i] = x[i - 1];
+            }
+            x[0] = feedback;
+        }
+
+        counter++;
+        if (counter >= m) counter = 0;
+
+        return currentBit;
+    }
+};
+
+// Instanciação: b=10 bits, m=28 (cada bit dura 28 ciclos de loop)
+PRBSGenerator meuPrbs(11, 21);
 
 void setup() {
   Serial.begin(115200);
@@ -33,76 +75,42 @@ void setup() {
   pinMode(pinSensResist, INPUT);
   pinMode(pinSensAmb, INPUT);
 
-  // Inicializa ambos os buffers
-  for(int i = 0; i < windowSize; i++) {
-    bufferSensResist[i] = 0;
-    bufferSensAmb[i] = 0;
-  }
+  Serial.println("Análise de TF iniciada");
 }
+
 
 void loop() {
-  // ledcWrite(pinPWMCooler, dutyCycle);
 
-    // 2. Lógica do Sinal Constante para teste
-  if (millis() - tempoTroca >= intervalo) {
-    tempoTroca = millis();
-    
-    // Alterna entre 0 e 42 (30%)
-    estadoAquecedor = (estadoAquecedor == 0) ? 42 : 42; //PWM_max teórico = 42
-    ledcWrite(pinPWMResist, estadoAquecedor);
-    
-    Serial.printf(">>> MUDANÇA: Aquecedor em %d por %ld ms\n", estadoAquecedor, intervalo);
-  }
+  int copy = -1;
 
-  int mv1 = analogReadMilliVolts(pinSensResist);
-  int mv2 = analogReadMilliVolts(pinSensAmb);
-
-  Serial.printf("S1_Bruto:%d - S2_Bruto:%d === ", 
-                mv1, mv2);
-
-  float leituraBruta1 = mv1 / 10.0;
-  float leituraBruta2 = mv2 / 10.0;
-
-  Serial.printf("T1_Bruto:%.1f - T2_Bruto:%.1f\n", 
-                leituraBruta1, leituraBruta2);
-
-  // float filtrada1 = getMedianFiltered(leituraBruta1, bufferSensResist, index1);
-  // float filtrada2 = getMedianFiltered(leituraBruta2, bufferSensAmb, index2);
-
-  // Output formatado para o Serial Plotter ou Debug
-  // Serial.printf("T1_Bruto:%.1f T1_Filt:%.1f | T2_Bruto:%.1f T2_Filt:%.1f\n", 
-  //               leituraBruta1, filtrada1, leituraBruta2, filtrada2);
-
-  delay(1000);
-}
-
-// Sua função de Insertion Sort (In-place)
-void insertionSort(float arr[], int n) {
-  for (int i = 1; i < n; i++) {
-    float key = arr[i];
-    int j = i - 1;
-    while (j >= 0 && arr[j] > key) {
-      arr[j + 1] = arr[j];
-      j = j - 1;
+  if (first == 1){
+    cont = cont + 1;
+    if (cont > 6*60){
+      first = 0;
     }
-    arr[j + 1] = key;
+      
+    else if (cont > 2*60){
+      ledcWrite(pinPWMResist, dutyCycle-15);
+    }
   }
-}
 
-// Função de Mediana Genérica
-// O segredo está no 'int &index', que permite atualizar o valor global do índice
-float getMedianFiltered(float newValue, float currentBuffer[], int &index) {
-  // 1. Grava no buffer específico
-  currentBuffer[index] = newValue;
-  index = (index + 1) % windowSize;
+  else {
+    // 1. Gera o bit atual do PRBS
+    int prbsStatus = meuPrbs.getNextBit();
+    copy = prbsStatus;
+    // 2. Mapeia o bit para o PWM físico
+    // Se prbsStatus for 1, liga o aquecedor no seu ponto de operação (ex: 32)
+    int valorPwm = (prbsStatus == 1) ? dutyCycle+15 : dutyCycle-15; //32 de dutycyle leva Temperatura p/ 60° em RP
+    ledcWrite(pinPWMResist, valorPwm);
+  }
 
-  // 2. Cria cópia local para ordenação
-  float tempArray[windowSize];
-  for(int i = 0; i < windowSize; i++) tempArray[i] = currentBuffer[i];
+  // 3. Realiza a leitura dos sensores (com a sua lógica diferencial)
+  int mvResist = analogReadMilliVolts(pinSensResist);
+  int mvAmb = analogReadMilliVolts(pinSensAmb);
 
-  // 3. Ordena a cópia
-  insertionSort(tempArray, windowSize);
+  // 4. Logger para o CoolTerm (CSV)
+  // Tempo; Tensão; Estado_PRBS
+  Serial.printf("%lu;%d;%d;%d;\n", millis(), mvResist, mvAmb, copy);
 
-  // 4. Retorna o valor central
-  return tempArray[4];
+  delay(1000); // Frequência de amostragem de 1Hz
 }
