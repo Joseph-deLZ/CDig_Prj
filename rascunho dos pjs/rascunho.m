@@ -6,7 +6,7 @@ G_identificada = tf(modelo);
 %G_identificada = zpk(modelo);
 
 % Abre o Control System Designer (SISO Tool) com a sua planta carregada no bloco 'G'
-controlSystemDesigner(G_identificada);
+
 
 % Nota: Se você estiver usando uma versão muito antiga do MATLAB, use o comando abaixo:
 % sisotool(G_identificada);

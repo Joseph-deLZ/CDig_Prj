@@ -1,11 +1,15 @@
 % --- 1. CARREGAMENTO E EXTRAÇÃO ---
-opts = detectImportOptions('Varredura_6h_10b.csv');
-tabela = readtable('Varredura_6h_10b.csv', opts);
+csv_data_path = 'varreduras/Varredura_6h_10b.csv';
+
+tabela = readtable( ...
+    csv_data_path, ...
+    detectImportOptions(csv_data_path) ...
+    );
 
 % Extraindo a temperatura
-y_temp_f = tabela.deltaTFinal; 
+y_temp_f = tabela.deltaTFinal;
 u_f = tabela.dcPWM;
-Ts = 1; 
+Ts = 1;
 
 % % --- 2. CORTE DO WARM-UP ---
 % % Aplica o mesmo corte em todos os sinais para manter a sincronia
@@ -34,3 +38,5 @@ modelo = procest(data, modelo_init);
 figure('Name', 'Validação do Modelo');
 compare(data, modelo);
 present(modelo);
+
+%Kp = modelo.Kp
