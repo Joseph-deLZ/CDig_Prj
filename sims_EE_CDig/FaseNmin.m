@@ -1,0 +1,8 @@
+g=tf([1 1],[1 10]);figure(1);bode(g)
+g=tf(-[1 1],[1 10]);figure(2);bode(g)
+g=tf([-1 1],[1 10]);figure(3);bode(g)
+g=tf([1 -1],[1 10]);figure(4);bode(g)
+g=tf([-1 1],[1 -10]);figure(5);bode(g)
+g=tf(-[-1 1],[1 -10]);figure(6);bode(g)
+g=tf([1 1],[1 -10]);figure(7);bode(g)
+g=tf([1 1],[-1 10]);figure(8);bode(g)
