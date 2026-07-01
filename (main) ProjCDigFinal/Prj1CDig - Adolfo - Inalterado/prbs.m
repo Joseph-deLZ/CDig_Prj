@@ -1,4 +1,4 @@
-function y=prbs(N,b,m)
+function y=prbs(N,b,m);
 
 % y=prbs(N,b,m)
 % generates a PRBS signal with length N and with b  
@@ -24,9 +24,9 @@ elseif b==10
    j=3;
 elseif b==11
    j=2;
-end
+end;
 for i=1:N/m
   y(m*(i-1)+1:m*i)=x(b)*ones(1,m);
   x=[ xor(y(m*(i-1)+1),x(b-j)) x(1:b-1)];
-end
+end;
 

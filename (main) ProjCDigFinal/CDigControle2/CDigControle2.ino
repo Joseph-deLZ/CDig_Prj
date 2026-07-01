@@ -7,27 +7,22 @@ const int pinSensAmb = 4;     // D4
 const int pinPWMResist = 16;  // RX2
 const int pinPWMCooler = 17;  // TX2
 
-// Frequência reduzida para 1kHz para suportar a resolução real de 16 bits no ESP32
-int freq = 1000;
+int freq = 1000; // Frequência de 1kHz para suportar a resolução real de 16 bits no ESP32
 int resolucao = 16; // 16 bits (0 a 65535)
 
-// Valor base operando nativamente em 16-bits
 float dutyCycle_16bit = 9216.0;
 int ponto_operacao = 60;
 
-// Variáveis Globais de Estado
-int cont = 0;              // Contador global de segundos reais
-int decisegundos = 0;      // Contador de décimos de segundo (para a senoide suave)
-long indice_senoide = 0;   // Índice dinâmico que varre a LUT
+int cont = 0; // Contador global de segundos reais
+int decisegundos = 0; // Contador de décimos de segundo (para a senoide suave)
+long indice_senoide = 0; // Índice dinâmico que varre a LUT
 
 float setpoint_dinamico = 60.0;
 int estadoCooler_16bit = 0;
 bool controle_ativo = false;
 bool senoide_ativa = false;
 
-// ==============================================================================
-// 1. A LUT DE 1/4 DE ONDA (160 posições)
-// ==============================================================================
+// LUT de 1/4 de onda da senoide (161 posições)
 const uint16_t lut_seno_1_4[161] = {
   43008, 43229, 43450, 43671, 43892, 44113, 44334, 44555, 44775, 44996, 45216, 45436,
   45656, 45875, 46095, 46313, 46532, 46750, 46968, 47186, 47403, 47620, 47836, 48052,
@@ -45,9 +40,7 @@ const uint16_t lut_seno_1_4[161] = {
   65518, 65526, 65531, 65534, 65535
 };
 
-// ==============================================================================
-// 2. FUNÇÕES DE SUPORTE (Mapeamento e Árvore de Estados)
-// ==============================================================================
+// Mapeamento dinâmico da senoide
 uint16_t getPWM_Senoide(long t_indice) {
   int num = 161 - 1; // 160
   int i = t_indice;
@@ -62,7 +55,9 @@ uint16_t getPWM_Senoide(long t_indice) {
   return (signal == 1) ? valor : (86016 - valor); 
 }
 
+// Máquina de Estados
 void atualizarMaquinaDeEstados(int t) {
+
   // 0 - 240 = WARM_UP
   if (t < 240) {
     setpoint_dinamico = ponto_operacao;
@@ -159,14 +154,16 @@ void atualizarMaquinaDeEstados(int t) {
   }
 }
 
-// ==============================================================================
-// 3. VARIÁVEIS E MATRIZES DO ESPAÇO DE ESTADOS (Nativas 16-bits / Ts = 5s)
-// ==============================================================================
+// VARIÁVEIS E MATRIZES DO ESPAÇO DE ESTADOS (16-bits / Ts = 5s)
+
+int Ts = 5;
+
 float x_hat[4] = {0.0, 0.0, 0.0, 0.0}; 
 float x_next[4] = {0.0, 0.0, 0.0, 0.0}; 
-float xi = 0.0;
+float xi = 0.0; // Integral do erro
 float u_aplicado_16bit = 0.0; 
 
+// Valores de Ad, Bd, Cd, Ld, Kd, Ki_d e Nb_d obtidos via MatLab disponibilizado pelo professor
 float Ad[4][4] = {
   {0.984647, 0.000000, 0.016495, 0.042199},
   {0.000000, 0.875595, 0.015547, 0.040587},
@@ -175,15 +172,17 @@ float Ad[4][4] = {
 };
 
 float Bd[4] = {0.017179, 0.016212, 0.000000, 0.000000};
+
 float Cd[4] = {0.000486, 0.022398, 0.000000, 0.000000};
+
 float Ld[4] = {268.619625, 35.665721, 187.870228, -101.898335};
 
-float Kd[2] = {0.515807, 17.193258};
-float Ki_d = 19.587932;
-float Nb_d = 167.590620;
+float Kd[2] = {0.537509, 18.214815};
+float Ki_d = 97.163316;
+float Nb_d = 834.839529;
 
-unsigned long tempoAmostragem100ms = 0; // Para o Cooler
-unsigned long tempoAmostragem5s = 0;    // Para o Observador
+unsigned long tempoAmostragem100ms = 0; // Pro Cooler
+unsigned long tempoAmostragem5s = 0; // Pro Observador
 
 void setup() {
   Serial.begin(115200);
@@ -200,36 +199,32 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
 
-  // ==============================================================================
-  // TAREFA 1: MÁQUINA DE ESTADOS E VENTILADOR (Roda a 10 Hz / 100ms)
-  // ==============================================================================
+  // MÁQUINA DE ESTADOS E VENTILADOR (Roda a cada 100ms)
   if (currentMillis - tempoAmostragem100ms >= 100) {
     tempoAmostragem100ms = currentMillis;
     
     decisegundos++;
     if (decisegundos % 10 == 0) {
-      cont++; // Incrementa 1 segundo real
+      cont++; // Incrementa a cada 1 segundo real
     }
 
-    // A mágica acontece aqui: define Setpoint, Ativação do Controle e Senoide
+    // Define Valor da referência, ativação do controle e estado da perturbação senoidal
     atualizarMaquinaDeEstados(cont);
 
-    // Gestão dinâmica da Senoide
+    // Gestão dinâmica da senoide
     if (senoide_ativa) {
       estadoCooler_16bit = getPWM_Senoide(indice_senoide);
       indice_senoide++;
     } else {
-      indice_senoide = 0; // Reseta para a onda sempre iniciar do zero
+      indice_senoide = 0; // Reseta pra onda sempre iniciar do zero
     }
 
     // Atualiza o vento suavemente (10x por segundo)
     ledcWrite(pinPWMCooler, estadoCooler_16bit);
   }
 
-  // ==============================================================================
-  // TAREFA 2: OBSERVADOR E CONTROLADOR (Roda estritamente a 0.2 Hz -> Ts = 5s)
-  // ==============================================================================
-  if (currentMillis - tempoAmostragem5s >= 5000) {
+  // OBSERVADOR E CONTROLADOR (Ts = 5s)
+  if (currentMillis - tempoAmostragem5s >= 1000*Ts) {
     tempoAmostragem5s = currentMillis;
 
     int mvResist = analogReadMilliVolts(pinSensResist);
@@ -241,25 +236,25 @@ void loop() {
     float e_sin_estimado = 0;
 
     if (controle_ativo) {
-      // ATENÇÃO: Matemática Matricial baseada na VARIAÇÃO (Delta) em torno do P.O.
+      // A matemática matricial é baseada na variação em torno do PO!
       float delta_Y_real = Y_real - ponto_operacao;
       float delta_R = setpoint_dinamico - ponto_operacao;
 
-      // 1. O Gêmeo Digital avalia a variação da temperatura
+      // O Gêmeo digital avalia a variação da temperatura
       Y_estimado = (Cd[0] * x_hat[0]) + (Cd[1] * x_hat[1]) + (Cd[2] * x_hat[2]) + (Cd[3] * x_hat[3]);
       erro_obs = delta_Y_real - Y_estimado;
       e_sin_estimado = x_hat[2];
 
-      // 2. Erro de controle
+      // Valor do erro de controle
       float erro_controle = delta_R - delta_Y_real;
       
       // Anti-windup condicional para o limite de meia carga (32768)
       if (u_aplicado_16bit > 0.0 && u_aplicado_16bit < 32768.0) {
-          xi = xi + (erro_controle * 5.0);
+          xi = xi + (erro_controle * (float)Ts);
       }
 
-      // 3. Ação Feedforward e Rejeição
-      float U_PI = (Nb_d * delta_R) + (Ki_d * xi); // Nb multiplica a VARIAÇÃO de Referência
+      // Ação feedforward e rejeição
+      float U_PI = (Nb_d * delta_R) + (Ki_d * xi); // Nb multiplica a VARIAÇÃO da referência
       float U_s = U_PI - ((Kd[0] * x_hat[0]) + (Kd[1] * x_hat[1]));
       float u_calc = U_s - e_sin_estimado;
 
@@ -270,15 +265,14 @@ void loop() {
       if (u_aplicado_16bit > 32768.0) u_aplicado_16bit = 32768.0;
       if (u_aplicado_16bit < 0.0)   u_aplicado_16bit = 0.0;
 
-      // --- A CORREÇÃO DE SATURAÇÃO AQUI ---
-      // Calcula a variação de energia que REALMENTE conseguiu passar pelo fio
+      // Calcula a variação de energia que REALMENTE consegue passar pelo fio
       float u_calc_saturado = u_aplicado_16bit - dutyCycle_16bit;
 
       // 4. O Gêmeo Digital se atualiza
       for (int i = 0; i < 4; i++) {
         x_next[i] = (Ad[i][0] * x_hat[0]) + (Ad[i][1] * x_hat[1]) + 
                     (Ad[i][2] * x_hat[2]) + (Ad[i][3] * x_hat[3]) + 
-                    (Bd[i] * u_calc_saturado) + // <-- GÊMEO AGORA ENXERGA A SATURAÇÃO
+                    (Bd[i] * u_calc_saturado) + // <-- GÊMEO ENXERGA A SATURAÇÃO
                     (Ld[i] * erro_obs);
       }
       for (int i = 0; i < 4; i++) {
@@ -297,11 +291,11 @@ void loop() {
       xi = 0.0;
     }
 
-    // 5. Aplica a Tensão Física 
+    // Aplica a tensão necessária
     ledcWrite(pinPWMResist, (int)(u_aplicado_16bit));
 
-    // 6. LOGGER (A cada 5s) - Recupera a estimativa absoluta para o gráfico somando o PO
-    float Y_estimado_Absoluto = Y_estimado + ponto_operacao;
+    // LOGGER (A cada 5s)
+    float Y_estimado_Absoluto = Y_estimado + ponto_operacao; // Recupera a estimativa absoluta para o gráfico somando o PO
     Serial.printf("%d;%.2f;%.2f;%d;%.2f;%.2f;%d;%.2f;%d;\n",
                   cont, Y_real, Y_estimado_Absoluto, (int)u_aplicado_16bit, erro_obs, e_sin_estimado, estadoCooler_16bit, setpoint_dinamico, mvAmb);
   }
