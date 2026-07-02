@@ -1,4 +1,8 @@
 # CDig_Prj
 Codes implemented for projects in the Digital Control course at the University of Brasília (UnB).
 
-- [ ] colocar links para o vídeo do projeto 1 e pro vídeo do pj 2
+important links:
+- video for the first project (first part): ["Proj CDig Grupo 8 1"](https://youtu.be/CtUjf3ikMr0?si=LSQJMU0MwEkaN1x_)
+- video for the second project (second part): ["Projeto 2 Controle Digital - Grupo 8"](https://youtu.be/VoSqHrXrhmQ?si=Upy6RxmjFdNcjN2z)
+
+`Análise_de_dados_proj_CDig.xlsx`: excel file used to plot all the charts for the report

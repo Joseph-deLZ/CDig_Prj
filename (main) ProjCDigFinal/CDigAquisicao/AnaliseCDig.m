@@ -34,3 +34,12 @@ modelo = procest(data, modelo_init);
 figure('Name', 'Validação do Modelo');
 compare(data, modelo);
 present(modelo);
+
+%Kp = modelo.Kp
+
+% --- 6. CONVERSÃO E PROJETO NO CONTROL SYSTEM DESIGNER (ANTIGO SISO TOOL) ---
+% Converte o modelo identificado (idproc) para uma Função de Transferência
+G_identificada = tf(modelo);
+%G_identificada = zpk(modelo);
+% Abre o Control System Designer (antigo SISO Tool) com a planta carregada no bloco 'G'
+controlSystemDesigner(G_identificada)
